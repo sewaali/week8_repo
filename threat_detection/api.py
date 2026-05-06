@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string
+from flask import Flask, request, render_template_string
 import pandas as pd
 import joblib
 import os
@@ -34,83 +34,137 @@ model = joblib.load(model_path)
 # MAIN PAGE
 # =========================================
 
-@app.route("/")
+@app.route("/", methods=["GET", "POST"])
 def home():
 
-   # Sample suspicious log
-   sample_data = [
-       {
-           "timestamp": "2026-01-01 10:00:00",
-           "ip": "10.0.0.1",
-           "action": "login",
-           "status": "fail"
+   output = None
+
+   if request.method == "POST":
+
+       ip = request.form["ip"]
+       action = request.form["action"]
+       status = request.form["status"]
+
+       # =====================================
+       # SAMPLE LOG
+       # =====================================
+
+       sample_data = [
+           {
+               "timestamp": "2026-01-01 10:00:00",
+               "ip": ip,
+               "action": action,
+               "status": status
+           }
+       ]
+
+       # dataframe
+       df = pd.DataFrame(sample_data)
+
+       # feature engineering
+       features = build_features(df)
+
+       X = features[[
+           "failed_logins",
+           "request_count"
+       ]]
+
+       # model prediction
+       prediction = model.predict(X)[0]
+
+       # =====================================
+       # THREAT LOGIC
+       # =====================================
+
+       suspicious_ips = [
+           "10.0.0.1",
+           "10.0.0.2",
+           "10.0.0.3"
+       ]
+
+       is_anomaly = False
+
+       # failed login attack
+       if action == "login" and status == "fail":
+           is_anomaly = True
+
+       # suspicious IP
+       if ip in suspicious_ips:
+           is_anomaly = True
+
+       result = {
+           "anomaly": is_anomaly
        }
-   ]
 
-   # Convert to dataframe
-   df = pd.DataFrame(sample_data)
-
-   # Feature engineering
-   features = build_features(df)
-
-   X = features[[
-       "failed_logins",
-       "request_count"
-   ]]
-
-   # Prediction
-   prediction = model.predict(X)[0]
-
-   result = {
-       "anomaly": bool(prediction == -1)
-   }
-   output = run_agents(result)
+       # agents
+       output = run_agents(result)
 
    # =====================================
-   # HTML PAGE
+   # HTML UI
    # =====================================
 
    html = f"""
+
 <html>
 
 <head>
+
 <title>Threat Detection Dashboard</title>
 
 <style>
 
            body {{
-               font-family: Arial;
                background-color: #0f172a;
                color: white;
+               font-family: Arial;
                padding: 40px;
+           }}
+
+           .container {{
+               width: 70%;
+               margin: auto;
            }}
 
            .card {{
                background: #1e293b;
-               padding: 20px;
+               padding: 25px;
                border-radius: 10px;
                margin-bottom: 20px;
            }}
 
+           input, select {{
+               width: 100%;
+               padding: 12px;
+               margin-top: 10px;
+               margin-bottom: 20px;
+               border-radius: 5px;
+               border: none;
+           }}
+
+           button {{
+               background: #ef4444;
+               color: white;
+               padding: 12px 20px;
+               border: none;
+               border-radius: 5px;
+               cursor: pointer;
+               font-size: 16px;
+           }}
+
+           button:hover {{
+               background: #dc2626;
+           }}
+
            .danger {{
-               color: red;
+               color: #ff4d4d;
                font-size: 22px;
                font-weight: bold;
            }}
 
-           table {{
-               width: 100%;
-               border-collapse: collapse;
-           }}
-
-           th, td {{
-               border: 1px solid gray;
-               padding: 10px;
-               text-align: center;
-           }}
-
-           th {{
-               background-color: #334155;
+           .safe {{
+               color: #22c55e;
+               font-size: 22px;
+               font-weight: bold;
            }}
 
 </style>
@@ -119,49 +173,106 @@ def home():
 
 <body>
 
+<div class="container">
+
 <h1>🛡 Threat Intelligence Dashboard</h1>
 
 <div class="card">
-<h2>Threat Detection Result</h2>
 
-<p class="danger">
-               🚨 {output["analysis"]}
-</p>
+<h2>🔍 Detect Threat</h2>
 
-<p>
-               Threat Level:
-<strong>
-                   {output["alert"]["threat_level"]}
-</strong>
-</p>
+<form method="POST">
 
-<p>
-               Recommended Action:
-<strong>
-                   {output["alert"]["recommended_action"]}
-</strong>
-</p>
+<label>IP Address</label>
+
+<input
+                       type="text"
+                       name="ip"
+                       placeholder="Enter IP Address"
+                       required
+>
+
+<label>Action</label>
+
+<select name="action">
+
+<option value="login">
+                           login
+</option>
+
+<option value="request">
+                           request
+</option>
+
+<option value="logout">
+                           logout
+</option>
+
+</select>
+
+<label>Status</label>
+
+<select name="status">
+
+<option value="success">
+                           success
+</option>
+
+<option value="fail">
+                           fail
+</option>
+
+</select>
+
+<button type="submit">
+                       🚨 Detect Threat
+</button>
+
+</form>
+
 </div>
+
+   """
+
+   # =====================================
+   # RESULTS
+   # =====================================
+
+   if output:
+
+       if output["detection"]["anomaly"]:
+
+           alert_class = "danger"
+
+       else:
+
+           alert_class = "safe"
+
+       html += f"""
 
 <div class="card">
 
-<h2>📡 Suspicious Activity</h2>
+<h2>Detection Result</h2>
 
-<table>
+<p class="{alert_class}">
+               {output["report"]}
+</p>
 
-<tr>
-<th>IP Address</th>
-<th>Action</th>
-<th>Status</th>
-</tr>
+<p>
+<strong>Threat Level:</strong>
+               {output["alert"]["threat_level"]}
+</p>
 
-<tr>
-<td>10.0.0.1</td>
-<td>login</td>
-<td>fail</td>
-</tr>
+<p>
+<strong>Recommended Action:</strong>
+               {output["alert"]["recommended_action"]}
+</p>
 
-</table>
+</div>
+
+       """
+
+   html += """
 
 </div>
 
