@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, render_template_string
 import pandas as pd
 import joblib
 import os
@@ -31,33 +31,13 @@ model_path = os.path.join(
 model = joblib.load(model_path)
 
 # =========================================
-# HOME PAGE
+# MAIN PAGE
 # =========================================
 
 @app.route("/")
 def home():
 
-   return """
-<h1> Threat Detection API Running ✅</h1>
-
-<h3>Available Pages:</h3>
-
-<ul>
-<li>
-<a href="/test">/test</a>
-           → Run Threat Detection
-</li>
-</ul>
-   """
-
-# =========================================
-# TEST PAGE (JSON OUTPUT)
-# =========================================
-
-@app.route("/test")
-def test():
-
-   # suspicious sample log
+   # Sample suspicious log
    sample_data = [
        {
            "timestamp": "2026-01-01 10:00:00",
@@ -67,10 +47,10 @@ def test():
        }
    ]
 
-   # dataframe
+   # Convert to dataframe
    df = pd.DataFrame(sample_data)
 
-   # features
+   # Feature engineering
    features = build_features(df)
 
    X = features[[
@@ -78,17 +58,119 @@ def test():
        "request_count"
    ]]
 
-   # prediction
+   # Prediction
    prediction = model.predict(X)[0]
 
    result = {
        "anomaly": bool(prediction == -1)
    }
-
-   # agents
    output = run_agents(result)
 
-   return jsonify(output)
+   # =====================================
+   # HTML PAGE
+   # =====================================
+
+   html = f"""
+<html>
+
+<head>
+<title>Threat Detection Dashboard</title>
+
+<style>
+
+           body {{
+               font-family: Arial;
+               background-color: #0f172a;
+               color: white;
+               padding: 40px;
+           }}
+
+           .card {{
+               background: #1e293b;
+               padding: 20px;
+               border-radius: 10px;
+               margin-bottom: 20px;
+           }}
+
+           .danger {{
+               color: red;
+               font-size: 22px;
+               font-weight: bold;
+           }}
+
+           table {{
+               width: 100%;
+               border-collapse: collapse;
+           }}
+
+           th, td {{
+               border: 1px solid gray;
+               padding: 10px;
+               text-align: center;
+           }}
+
+           th {{
+               background-color: #334155;
+           }}
+
+</style>
+
+</head>
+
+<body>
+
+<h1>🛡 Threat Intelligence Dashboard</h1>
+
+<div class="card">
+<h2>Threat Detection Result</h2>
+
+<p class="danger">
+               🚨 {output["analysis"]}
+</p>
+
+<p>
+               Threat Level:
+<strong>
+                   {output["alert"]["threat_level"]}
+</strong>
+</p>
+
+<p>
+               Recommended Action:
+<strong>
+                   {output["alert"]["recommended_action"]}
+</strong>
+</p>
+</div>
+
+<div class="card">
+
+<h2>📡 Suspicious Activity</h2>
+
+<table>
+
+<tr>
+<th>IP Address</th>
+<th>Action</th>
+<th>Status</th>
+</tr>
+
+<tr>
+<td>10.0.0.1</td>
+<td>login</td>
+<td>fail</td>
+</tr>
+
+</table>
+
+</div>
+
+</body>
+
+</html>
+   """
+
+   return render_template_string(html)
 
 # =========================================
 # RUN APP
